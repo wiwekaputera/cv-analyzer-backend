@@ -72,36 +72,86 @@ def get_paginated_candidates(
     # Calculate offset for pagination
     offset = (page - 1) * limit
 
-    # Start building the query
-    query = supabase.table("candidates").select("*, resumes(*)", count="exact")
-
-    # Apply search term filter if provided
-    if search_term and search_term.strip():
-        logger.info(f"Applying search filter for: '{search_term}'")
-        # Correct Supabase syntax for OR conditions
-        query = query.or_(
-            f"full_name.ilike.%{search_term}%," f"email.ilike.%{search_term}%"
-        )
-
-    # Apply category filter if it's not 'all'
     if category != "all":
         logger.info(f"Applying category filter for: '{category}'")
-        query = query.eq("resumes.category", category)
 
-    # Apply pagination and ordering
-    query = query.range(offset, offset + limit - 1).order("created_at", desc=True)
+        # Query resumes table with category filter, then join candidates
+        query = (
+            supabase.table("resumes")
+            .select(
+                "id, category, pdf_url, resume_text, created_at, candidates(id, full_name, email, phone_number, created_at)"
+            )
+            .eq("category", category)
+        )
 
-    # Execute the query
-    response = query.execute()
+        # Apply search if provided
+        if search_term and search_term.strip():
+            logger.info(f"Applying search filter for: '{search_term}'")
+            query = query.ilike("candidates.full_name", f"%{search_term}%")
 
-    if not response.data:
-        return [], 0
+        # Get ALL results first (without pagination) to count unique candidates
+        all_response = query.execute()
 
-    total_count = response.count or 0
-    candidates = response.data
+        if not all_response.data:
+            return [], 0
+
+        # Count unique candidates
+        unique_candidate_ids = set()
+        all_candidates = []
+
+        for item in all_response.data:
+            candidate_data = item.get("candidates", {})
+            if candidate_data:
+                candidate_id = candidate_data.get("id")
+                if candidate_id not in unique_candidate_ids:
+                    unique_candidate_ids.add(candidate_id)
+                    all_candidates.append(
+                        {
+                            "id": candidate_data.get("id"),
+                            "full_name": candidate_data.get("full_name"),
+                            "email": candidate_data.get("email"),
+                            "phone_number": candidate_data.get("phone_number"),
+                            "created_at": candidate_data.get("created_at"),
+                            "resumes": [
+                                {
+                                    "id": item.get("id"),
+                                    "category": item.get("category"),
+                                    "pdf_url": item.get("pdf_url"),
+                                    "resume_text": item.get("resume_text"),
+                                    "created_at": item.get("created_at"),
+                                }
+                            ],
+                        }
+                    )
+
+        # Now apply pagination to unique candidates
+        total_count = len(all_candidates)
+        candidates = all_candidates[offset : offset + limit]
+
+    else:
+        # Query candidates table normally
+        query = supabase.table("candidates").select(
+            "id, full_name, email, phone_number, created_at, resumes(id, category, pdf_url, resume_text, created_at)",
+            count="exact",
+        )
+
+        # Apply search if provided
+        if search_term and search_term.strip():
+            logger.info(f"Applying search filter for: '{search_term}'")
+            query = query.ilike("full_name", f"%{search_term}%")
+
+        # Apply pagination and ordering
+        query = query.range(offset, offset + limit - 1).order("created_at", desc=True)
+
+        response = query.execute()
+
+        if not response.data:
+            return [], 0
+
+        total_count = response.count or 0
+        candidates = response.data
 
     logger.info(
         f"Fetched {len(candidates)} candidates for page {page} with total count {total_count}."
     )
-
     return candidates, total_count
