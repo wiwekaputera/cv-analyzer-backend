@@ -47,10 +47,7 @@ def create_app(config_class=None) -> Flask:
         url: str = config("SUPABASE_URL")
         key: str = config("SUPABASE_KEY")
 
-        # Initialize the Supabase client
         supabase: Client = create_client(url, key)
-
-        # Attach the client to the app instance so we can access it anywhere
         app.supabase = supabase
 
         app.logger.info("Supabase client initialized successfully.")
@@ -58,10 +55,11 @@ def create_app(config_class=None) -> Flask:
         app.logger.error(f"CRITICAL: Failed to initialize Supabase client: {e}")
 
     # --- 3. Configure CORS ---
+    # FIX: Removed the trailing slashes from the URLs.
     allowed_origins = [
         "http://localhost:3000",
-        "https://wiwekaputera.com/",
-        "https://portfolio-frontend-wiweka-puteras-projects.vercel.app/"
+        "https://wiwekaputera.com",
+        "https://portfolio-frontend-wiweka-puteras-projects.vercel.app",
     ]
     CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
     app.logger.info(f"CORS configured to allow requests from: {allowed_origins}")
