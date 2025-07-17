@@ -19,7 +19,11 @@ def create_app(config_class=None) -> Flask:
     app = Flask(__name__)
 
     # --- 1. Configure Logging ---
-    log_file = "backend.log"
+    logs_dir = "logs"
+    if not os.path.exists(logs_dir):
+        os.makedirs(logs_dir)
+
+    log_file = os.path.join(logs_dir, "backend.log")
     file_handler = RotatingFileHandler(log_file, maxBytes=10240, backupCount=10)
     file_handler.setFormatter(
         logging.Formatter(

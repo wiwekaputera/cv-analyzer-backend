@@ -13,3 +13,9 @@ wheels/
 
 # CV Dataset
 ResumeDataset/
+
+# Logs
+logs/
+*.log
+*.log.*
+backend.log*
