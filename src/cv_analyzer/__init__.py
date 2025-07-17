@@ -58,11 +58,14 @@ def create_app(config_class=None) -> Flask:
         app.logger.error(f"CRITICAL: Failed to initialize Supabase client: {e}")
 
     # --- 3. Configure CORS ---
-    CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
-    app.logger.info("CORS configured to allow requests from http://localhost:3000")
+    allowed_origins = [
+        "http://localhost:3000",
+        "https://portfolio-frontend-kappa-pied.vercel.app/",
+    ]
+    CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
+    app.logger.info(f"CORS configured to allow requests from: {allowed_origins}")
 
     # --- 4. Register Blueprints ---
-    ### CHANGED ###
     app.register_blueprint(api_bp, url_prefix="/api")
     app.logger.info("API blueprint registered.")
 
