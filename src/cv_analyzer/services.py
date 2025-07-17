@@ -65,6 +65,9 @@ def get_paginated_candidates(
     Fetches a paginated, searchable, and filterable list of all candidates.
     """
     logger: logging.Logger = logging.getLogger(__name__)
+    logger.info(
+        f"Getting candidates - page: {page}, limit: {limit}, search: '{search_term}', category: '{category}'"
+    )
 
     # Calculate offset for pagination
     offset = (page - 1) * limit
@@ -72,20 +75,18 @@ def get_paginated_candidates(
     # Start building the query
     query = supabase.table("candidates").select("*, resumes(*)", count="exact")
 
+    # Apply search term filter if provided
+    if search_term and search_term.strip():
+        logger.info(f"Applying search filter for: '{search_term}'")
+        # Correct Supabase syntax for OR conditions
+        query = query.or_(
+            f"full_name.ilike.%{search_term}%," f"email.ilike.%{search_term}%"
+        )
+
     # Apply category filter if it's not 'all'
     if category != "all":
-        # We need to filter on the joined 'resumes' table
+        logger.info(f"Applying category filter for: '{category}'")
         query = query.eq("resumes.category", category)
-
-    # Apply search term filter if provided
-    if search_term:
-        # Search across multiple fields: full_name, email, and resume_text
-        # The syntax is or(filter1, filter2, ...)
-        query = query.or_(
-            f"full_name.ilike.%{search_term}%,"
-            f"email.ilike.%{search_term}%,"
-            f"resumes.resume_text.ilike.%{search_term}%"
-        )
 
     # Apply pagination and ordering
     query = query.range(offset, offset + limit - 1).order("created_at", desc=True)
@@ -96,8 +97,7 @@ def get_paginated_candidates(
     if not response.data:
         return [], 0
 
-    # The total count is returned in the 'count' attribute of the response
-    total_count = response.count
+    total_count = response.count or 0
     candidates = response.data
 
     logger.info(
