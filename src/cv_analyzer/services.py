@@ -1,7 +1,7 @@
 # src/cv_analyzer/services.py
 
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from supabase import Client
 
 
@@ -10,18 +10,9 @@ def get_ranked_resume_matches(
 ) -> List[Dict[str, Any]]:
     """
     Core business logic to fetch, score, and rank resumes against keywords.
-
-    Args:
-        keywords: A list of lowercase keywords to search for.
-        supabase: An initialized Supabase client instance.
-
-    Returns:
-        A sorted list of candidate matches, each as a dictionary.
     """
     logger: logging.Logger = logging.getLogger(__name__)
 
-    # --- 1. Fetch all resumes and their associated candidate data ---
-    # The 'candidates(*)' syntax tells Supabase to perform a JOIN.
     response = (
         supabase.table("resumes")
         .select("resume_text, pdf_url, candidates(id, full_name, email, phone_number)")
@@ -35,17 +26,14 @@ def get_ranked_resume_matches(
 
     logger.info(f"Successfully fetched {len(response.data)} resumes for analysis.")
 
-    # --- 2. Score each resume based on keyword occurrences ---
     scored_matches = []
     for resume_data in response.data:
         score = 0
-        # Ensure resume_text is not None before calling .lower()
         resume_text_lower = (resume_data.get("resume_text") or "").lower()
 
         for keyword in keywords:
             score += resume_text_lower.count(keyword)
 
-        # Only include resumes that have a score greater than 0
         if score > 0:
             candidate_info = resume_data.get("candidates")
             if candidate_info:
@@ -57,8 +45,6 @@ def get_ranked_resume_matches(
                     }
                 )
 
-    # --- 3. Sort the results by score in descending order ---
-    # Add a check to ensure scored_matches is not empty before sorting/accessing
     if not scored_matches:
         logger.info("No matches found for the given keywords.")
         return []
@@ -70,3 +56,52 @@ def get_ranked_resume_matches(
     )
 
     return sorted_matches
+
+
+def get_paginated_candidates(
+    supabase: Client, page: int, limit: int, search_term: str, category: str
+) -> Tuple[List[Dict[str, Any]], int]:
+    """
+    Fetches a paginated, searchable, and filterable list of all candidates.
+    """
+    logger: logging.Logger = logging.getLogger(__name__)
+
+    # Calculate offset for pagination
+    offset = (page - 1) * limit
+
+    # Start building the query
+    query = supabase.table("candidates").select("*, resumes(*)", count="exact")
+
+    # Apply category filter if it's not 'all'
+    if category != "all":
+        # We need to filter on the joined 'resumes' table
+        query = query.eq("resumes.category", category)
+
+    # Apply search term filter if provided
+    if search_term:
+        # Search across multiple fields: full_name, email, and resume_text
+        # The syntax is or(filter1, filter2, ...)
+        query = query.or_(
+            f"full_name.ilike.%{search_term}%,"
+            f"email.ilike.%{search_term}%,"
+            f"resumes.resume_text.ilike.%{search_term}%"
+        )
+
+    # Apply pagination and ordering
+    query = query.range(offset, offset + limit - 1).order("created_at", desc=True)
+
+    # Execute the query
+    response = query.execute()
+
+    if not response.data:
+        return [], 0
+
+    # The total count is returned in the 'count' attribute of the response
+    total_count = response.count
+    candidates = response.data
+
+    logger.info(
+        f"Fetched {len(candidates)} candidates for page {page} with total count {total_count}."
+    )
+
+    return candidates, total_count
