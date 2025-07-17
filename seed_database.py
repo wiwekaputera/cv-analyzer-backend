@@ -233,7 +233,7 @@ def main():
             print(f"\n--- Processing record {index + 1}/{total_rows} ---")
             if process_resume_row(row, supabase, faker):
                 successful_seeds += 1
-            time.sleep(0.05)  # Small delay to be nice to the API
+            time.sleep(0.05)
 
     print("\n--- Seeding Complete ---")
     print(f"Total rows processed: {total_rows}")

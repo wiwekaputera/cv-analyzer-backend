@@ -2,70 +2,72 @@
 
 import logging
 from flask import Blueprint, request, jsonify, current_app
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, Field
+from typing import List
+
+# Import our new services module
+from . import services
+
 
 # --- 1. Define Data Validation Models ---
 class AnalyzeRequest(BaseModel):
-    keywords: list[str]
+    keywords: List[str]
+    # Add the new 'limit' field. It's optional, defaults to 5,
+    # and must be between 1 and 100.
+    limit: int = Field(default=5, gt=0, le=100)
+
 
 # --- 2. Create the Blueprint ---
-api_bp: Blueprint = Blueprint('api_bp', __name__)
+api_bp: Blueprint = Blueprint("api_bp", __name__)
+
 
 # --- 3. Define API Routes ---
-@api_bp.route('/analyze', methods=['POST'])
+@api_bp.route("/analyze", methods=["POST"])
 def analyze_resumes():
     """
     The core endpoint to analyze resumes based on keywords.
-    Expects a JSON body with a "keywords" key, which is a list of strings.
+    This function acts as a "controller". It handles the HTTP request/response
+    and delegates the core business logic to the service layer.
     """
     logger: logging.Logger = logging.getLogger(__name__)
     logger.info("Received request for /api/analyze")
 
     # --- Request Validation ---
     try:
-        # get_json() parses the incoming JSON request data and returns a Python dict
         json_data = request.get_json()
         if not json_data:
             logger.warning("Request received with no JSON body.")
             return jsonify({"error": "Request body must be JSON"}), 400
-        
-        # Validate the request body against our Pydantic model
+
         validated_data = AnalyzeRequest(**json_data)
-        keywords = validated_data.keywords
-        logger.info(f"Analysis request validated for keywords: {keywords}")
+        keywords = [kw.lower() for kw in validated_data.keywords]
+        limit = validated_data.limit
+        logger.info(
+            f"Analysis request validated for keywords: {keywords}, limit: {limit}"
+        )
 
     except ValidationError as e:
-        # If validation fails, Pydantic raises a ValidationError.
         logger.error(f"Request validation failed: {e}")
-        # Return a helpful error message with the validation details.
         return jsonify({"error": "Invalid request body", "details": e.errors()}), 400
     except Exception as e:
         logger.error(f"An unexpected error occurred during request parsing: {e}")
         return jsonify({"error": "An unexpected error occurred."}), 500
 
-    # --- Core Logic ---
-    # Access the Supabase client attached to our app instance
+    # --- Call Service Layer and Format Response ---
     try:
-        supabase = current_app.supabase
-        
-        # TODO: Implement the actual resume fetching and analysis logic here.
-        # For now, we will just confirm we can query the database.
-        
-        # Example query: Fetch the first 5 resumes
-        response = supabase.table('resumes').select("id, resume_text, pdf_url").limit(5).execute()
-        
-        logger.info(f"Successfully fetched {len(response.data)} resumes for analysis.")
+        # Delegate the heavy lifting to the service function
+        matches = services.get_ranked_resume_matches(keywords, current_app.supabase)
 
-        # Placeholder for the analysis results
-        analysis_results = {
-            "message": "Analysis logic not yet implemented.",
-            "received_keywords": keywords,
-            "sample_resumes_fetched": response.data
-        }
+        # Limit the number of results before adding the rank
+        limited_matches = matches[:limit]
 
-        return jsonify(analysis_results), 200
+        final_response = []
+        for i, match in enumerate(limited_matches):
+            match["rank"] = i + 1
+            final_response.append(match)
+
+        return jsonify({"matches": final_response}), 200
 
     except Exception as e:
         logger.exception("An error occurred during the analysis process.")
         return jsonify({"error": "An internal error occurred during analysis."}), 500
-
