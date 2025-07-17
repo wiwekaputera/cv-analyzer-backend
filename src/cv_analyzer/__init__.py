@@ -60,7 +60,8 @@ def create_app(config_class=None) -> Flask:
     # --- 3. Configure CORS ---
     allowed_origins = [
         "http://localhost:3000",
-        "https://portfolio-frontend-kappa-pied.vercel.app/",
+        "https://wiwekaputera.com/",
+        "https://portfolio-frontend-wiweka-puteras-projects.vercel.app/"
     ]
     CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
     app.logger.info(f"CORS configured to allow requests from: {allowed_origins}")
